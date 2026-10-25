@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#e8ece1">
+  <title>浙大文化 · 跳一跳</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="app">
+    <section class="game-panel" aria-label="浙大校园跳一跳">
+      <header class="masthead">
+        <div class="identity"><span class="university-mark" aria-hidden="true">浙</span><div><p class="eyebrow">ZHEJIANG UNIVERSITY · 1897</p><h1>浙大文化 <span>·</span> 跳一跳</h1></div></div>
+        <div class="header-actions"><span class="progress-count" id="progressCount">01 / 20</span><button class="icon-button" id="leaderboardButton" aria-haspopup="dialog">排行榜</button><button class="icon-button" id="qualityButton" title="切换自动、流畅或清晰画质">画质 自动</button><button class="icon-button" id="soundButton" aria-label="开启音效" aria-pressed="false" title="音效">音效 关</button><button class="icon-button" id="restartButton" title="重新开始">重来</button></div>
+      </header>
+      <div class="stage" id="stage">
+        <canvas id="sceneCanvas" aria-label="按住空格、画面或下方按钮蓄力，松开起跳" tabindex="0"></canvas>
+        <div class="stage-top"><div class="score-card"><span class="eyebrow">旅程得分</span><strong id="scoreValue">0</strong><span id="comboLabel">从求是出发</span></div><span class="route-label" id="routeLabel">校园漫游 · 第 1 站</span></div>
+        <div class="tip-card" id="tipCard">按住蓄力，松开起跳。<br><span>时间越久，跳得越远；落在中心可连续加分。</span></div>
+        <div class="world-chip current-chip" id="currentChip"></div><div class="world-chip next-chip" id="nextChip"></div>
+        <div class="landing-feedback" id="landingFeedback" role="status" aria-live="polite"></div>
+        <div class="stage-bottom"><div class="destination"><span>下一站</span><strong id="nextName">求是大讲堂</strong></div><div class="charge-meter"><div><span>蓄力</span><span id="powerLabel">按住开始</span></div><div class="charge-track"><i id="powerBar"></i></div></div></div>
+        <div class="loading" id="loading"><span class="loading-dot"></span>正在走进浙大校园…</div>
+        <div class="stage-overlay" id="stageOverlay" hidden><div class="result-card"><span class="result-icon" id="overlayIcon">↗</span><p class="eyebrow" id="overlayKicker">再试一次</p><h2 id="overlayTitle">差一点就到了</h2><p id="overlayText"></p><div class="result-score"><strong id="overlayScore">0</strong><span>旅程得分</span></div>
+          <form class="score-form" id="scoreForm" novalidate>
+            <label for="nicknameInput">留下昵称，登上校园榜</label>
+            <input id="nicknameInput" name="nickname" type="text" maxlength="16" autocomplete="nickname" placeholder="你的昵称" aria-describedby="nicknameHint submitStatus" required>
+            <p id="nicknameHint" class="form-hint">1–16 字，中英文、数字、下划线或连字符；昵称可重名。</p>
+            <p class="player-identity" id="playerIdentity"></p>
+            <button class="primary-button" id="submitScoreButton" type="submit">提交成绩</button>
+            <p class="form-status" id="submitStatus" role="status" aria-live="polite"></p>
+          </form>
+          <button class="primary-button" id="overlayButton">从本站重试</button><button class="text-button" id="overlaySecondary">重新走一遍</button></div></div>
+      </div>
+      <footer class="controls"><div class="control-hint"><span class="keycap">SPACE</span><p>按住蓄力 · 松开起跳<small>也可以长按游戏画面</small></p></div><button class="jump-button" id="jumpButton"><span>按住蓄力</span><span aria-hidden="true">↗</span></button></footer>
+    </section>
+    <aside class="story-panel" aria-label="建筑实景与校园文化">
+      <div class="story-heading"><span class="eyebrow">CAMPUS FIELD NOTES</span><span class="station-number" id="stationNumber">01</span></div>
+      <h2 id="infoTitle">南大门</h2>
+      <figure class="photo-frame"><img id="buildingPhoto" alt="当前站点实景照片"><figcaption><span>实景参照</span><span>浙江大学</span></figcaption></figure>
+      <div class="story-meta"><span id="infoTag"></span><span id="infoYear"></span></div>
+      <p class="description" id="infoDescription"></p><blockquote id="infoQuote"></blockquote>
+      <div class="journey-progress"><div><span>求是文化之旅</span><strong id="progressText">1 / 20 站</strong></div><div class="progress-track"><i id="progressBar"></i></div><p>走过一处地标，读懂一段浙大。</p></div>
+      <a id="archiveLink" class="photo-link" target="_blank" rel="noopener">查看本张实景照片 <span>↗</span></a>
+      <p class="model-note">建筑依据实景照片提炼轮廓，尺度适配跳跃玩法。</p>
+    </aside>
+  </main>
+  <dialog class="leaderboard-dialog" id="leaderboardDialog" aria-labelledby="leaderboardTitle">
+    <div class="leaderboard-heading"><div><p class="eyebrow">CAMPUS HIGH SCORES</p><h2 id="leaderboardTitle">求是校园榜 <span>TOP 100</span></h2></div><button class="icon-button" id="closeLeaderboard" aria-label="关闭排行榜" autofocus>关闭</button></div>
+    <p class="leaderboard-rule">每位玩家只保留最高分，同分时先达到的排名靠前。</p>
+    <div class="leaderboard-toolbar"><span id="leaderboardIdentity"></span><button class="icon-button" id="refreshLeaderboard">刷新榜单</button></div>
+    <p id="leaderboardStatus" class="leaderboard-status" role="status" aria-live="polite">正在加载…</p>
+    <div class="leaderboard-table-wrap"><table class="leaderboard-table"><caption class="sr-only">校园跳一跳前 100 名玩家</caption><thead><tr><th scope="col">排名</th><th scope="col">玩家</th><th scope="col">最高分</th></tr></thead><tbody id="leaderboardRows"></tbody></table></div>
+  </dialog>
+  <script src="./vendor/three.min.js"></script>
+  <script src="./assets/player-emblem.js"></script>
+  <script src="./campus-data.js"></script>
+  <script src="./game-core.js"></script>
+  <script src="./leaderboard.js"></script>
+  <script src="./leaderboard-ui.js"></script>
+  <script src="./campus-models.js"></script>
+  <script src="./fall-physics.js?v=20261025-edge-roll"></script>
+  <script src="./game.js?v=20261025-edge-roll"></script>
+</body>
+</html>

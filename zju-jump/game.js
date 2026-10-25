@@ -2,6 +2,7 @@
 const $=id=>document.getElementById(id),T=THREE,core=JumpCore;
 const stage=$('stage'),canvas=$('sceneCanvas'),jumpButton=$('jumpButton');
 let renderer,scene,camera,player,platforms=[],current=0,mode='loading',score=0,combo=0,flight=null;
+let fallWorld=null,fallBody=null;
 let chargeStart=0,phaseStart=0,lastFrame=0,raf=0,landingSpot=null,soundOn=false,audioContext;
 let cameraFocus=new T.Vector3(),cameraGoal=new T.Vector3(),sun,landingRing,targetRing,contactShadow;
 let stageWidth=1,stageHeight=1,labelsDirty=true,inFrame=false,renderDirty=false,hiddenAt=0;
@@ -228,11 +229,13 @@ function updateInfo(){
   goalForStation();
 }
 function resetGame(){
+  fallWorld=null;fallBody=null;
   current=0;score=0;combo=0;mode='ready';flight=null;landingSpot=platforms[0].pos.clone();player.position.copy(landingSpot);player.quaternion.identity();player.scale.setScalar(1);
   $('stageOverlay').hidden=true;$('tipCard').classList.remove('is-hidden');$('landingFeedback').classList.remove('show');landingRing.visible=false;
   clearCharge();updateInfo();cameraFocus.copy(cameraGoal);updateCamera(1);setControls();requestRender();
 }
 function retryStation(){
+  fallWorld=null;fallBody=null;
   if(mode==='complete'){resetGame();return;}
   player.position.copy(platforms[current].pos);landingSpot=player.position.clone();player.scale.setScalar(1);player.quaternion.identity();combo=0;mode='ready';flight=null;
   $('stageOverlay').hidden=true;clearCharge();updateInfo();setControls();requestRender();
@@ -256,12 +259,34 @@ function releaseCharge(){
   const elapsed=performance.now()-chargeStart;
   player.position.copy(landingSpot);player.scale.setScalar(1);
   flight=core.trajectory({x:player.position.x,y:player.position.y,z:player.position.z},platforms[current+1].pos,core.travelForCharge(elapsed));
+  flight.missed=!core.contains(platforms[current+1].surface,flight.to)&&!core.contains(platforms[current].surface,flight.to);
+  flight.progress=0;
+  fallWorld=null;fallBody=null;
   flipAxis.set(flight.to.z-flight.from.z,0,-(flight.to.x-flight.from.x)).normalize();
   phaseStart=performance.now();mode='flying';clearCharge();setControls();tone(350+elapsed*.12,.12,'sine',.025);requestRender();
 }
 function showFeedback(text){
   const element=$('landingFeedback');element.textContent=text;element.classList.remove('show');
   element.getAnimations().forEach(animation=>animation.cancel());element.classList.add('show');
+}
+function getFallWorld(){
+  // Build a spatial index only for a failed jump and only for nearby architecture.
+  return fallWorld??=CoinFallPhysics.createWorld(platforms.filter(p=>Math.abs(p.index-current)<=2).map(p=>p.group));
+}
+function beginFall(now){
+  const direction=new T.Vector3(flight.to.x-flight.from.x,0,flight.to.z-flight.from.z).normalize();
+  let nearest=null,distance=Infinity;
+  for(const index of [current,current+1]){
+    const surface=platforms[index].surface;
+    const dx=Math.max(0,Math.abs(player.position.x-surface.x)-(surface.width/2||surface.radius));
+    const dz=Math.max(0,Math.abs(player.position.z-surface.z)-(surface.depth/2||surface.radius));
+    const gap=Math.hypot(dx,dz);
+    if(gap<distance){distance=gap;nearest=surface;}
+  }
+  if(distance<1.6)direction.copy(CoinFallPhysics.escapeDirection(nearest,player.position,direction));
+  fallBody=CoinFallPhysics.createBody(getFallWorld(),player.position,player.quaternion,direction);
+  player.position.copy(fallBody.position);player.quaternion.copy(fallBody.quaternion);
+  mode='falling';phaseStart=now;tone(170,.25,'triangle',.025);setControls();
 }
 function settleLanding(now){
   const next=platforms[current+1],result=core.landingResult(next.surface,flight.to);
@@ -273,7 +298,7 @@ function settleLanding(now){
     mode='landing';phaseStart=now;player.quaternion.identity();updateInfo();
   }else if(core.contains(platforms[current].surface,flight.to)){
     player.position.set(flight.to.x,platforms[current].pos.y,flight.to.z);landingSpot=player.position.clone();mode='landing';phaseStart=now;combo=0;player.quaternion.identity();showFeedback('蓄力再久一点');updateInfo();
-  }else{mode='falling';phaseStart=now;flight.fallFrom=player.position.clone();tone(170,.25,'triangle',.025);}
+  }else beginFall(now);
   setControls();
 }
 function showResult(complete){
@@ -306,14 +331,32 @@ function animate(now){
     const percent=Math.round(ratio*100);
     if(percent!==powerPercent){powerPercent=percent;hud.powerBar.style.background=ratio>.88?'#ac7752':'#456b4d';hud.powerLabel.textContent=ratio>=1?'蓄力已满':`${percent}%`;}
   }else if(mode==='flying'){
-    const t=core.clamp((now-phaseStart)/(flight.duration*1000),0,1),position=core.sample(flight,t);player.position.set(position.x,position.y,position.z);
-    player.quaternion.setFromAxisAngle(flipAxis,(reduceMotion?0:t)*Math.PI*2);if(t>=1)settleLanding(now);
+    const t=core.clamp((now-phaseStart)/(flight.duration*1000),0,1),position=core.sample(flight,t);
+    const nextPosition=new T.Vector3(position.x,position.y,position.z),nextRotation=new T.Quaternion().setFromAxisAngle(flipAxis,(reduceMotion?0:t)*Math.PI*2);
+    let collision=null;
+    if(flight.missed){
+      // Follow the curved flight even when frames are skipped; a straight chord
+      // from takeoff to landing would incorrectly hit the starting roof.
+      const steps=Math.max(1,Math.ceil((t-flight.progress)*60));
+      const from=player.position.clone(),fromRotation=player.quaternion.clone();
+      for(let i=1;i<=steps;i++){
+        const at=flight.progress+(t-flight.progress)*i/steps,p=core.sample(flight,at);
+        nextPosition.set(p.x,p.y,p.z);nextRotation.setFromAxisAngle(flipAxis,(reduceMotion?0:at)*Math.PI*2);
+        if((flight.to.y-flight.from.y)+4*flight.height*(1-2*at)<0){
+          collision=getFallWorld().sweep(from,fromRotation,nextPosition,nextRotation);if(collision)break;
+        }
+        from.copy(nextPosition);fromRotation.copy(nextRotation);
+      }
+    }
+    flight.progress=t;
+    if(collision){player.position.copy(collision.position);player.quaternion.copy(collision.quaternion);beginFall(now);}
+    else{player.position.copy(nextPosition);player.quaternion.copy(nextRotation);if(t>=1)settleLanding(now);}
   }else if(mode==='landing'){
     const t=core.clamp((now-phaseStart)/210,0,1),bounce=Math.sin(t*Math.PI);player.scale.set(1+bounce*.13,1-bounce*.35,1+bounce*.13);player.position.y=landingSpot.y-bounce*.026;
     if(t>=1){player.scale.setScalar(1);player.position.copy(landingSpot);if(current===19)showResult(true);else{mode='ready';setControls();}}
   }else if(mode==='falling'){
-    const t=(now-phaseStart)/1000;player.position.copy(flight.fallFrom);player.position.y-=7*t*t;player.position.x+=(flight.to.x-flight.from.x)*t*.13;player.position.z+=(flight.to.z-flight.from.z)*t*.13;
-    player.rotateOnWorldAxis(flipAxis,dt*3.5);if(t>.65)showResult(false);
+    fallBody.advance((now-phaseStart)/1000);player.position.copy(fallBody.position);player.quaternion.copy(fallBody.quaternion);
+    if(fallBody.finished)showResult(false);
   }
   if(landingRing.visible){const age=(now-phaseStart)/600;landingRing.scale.setScalar(1+Math.max(0,age)*2);landingRing.material.opacity=Math.max(0,.75*(1-age));if(age>=1)landingRing.visible=false;}
   let shadowY=-.2;
