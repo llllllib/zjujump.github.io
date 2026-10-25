@@ -12,6 +12,26 @@ try{const saved=localStorage.getItem('zju-jump-quality');if(['auto','smooth','cl
 const cameraOffset=new T.Vector3(11,13.5,11),flipAxis=new T.Vector3();
 const sunOffset=new T.Vector3(-9,20,10);
 const playerLift=.115,reduceMotion=matchMedia('(prefers-reduced-motion: reduce)').matches;
+const landingMarkerMaterial=new T.MeshBasicMaterial({color:0xffffff,toneMapped:false,side:T.DoubleSide});
+
+function createLandingMarker(surface){
+  // The border encloses valid coin-center positions, including the landing margin.
+  // An inscribed square keeps every marked point safe on circular platforms too.
+  const margin=core.PLAYER_RADIUS*.5;
+  const halfWidth=surface.shape==='circle'?(surface.radius-margin)/Math.SQRT2:surface.width/2-margin;
+  const halfDepth=surface.shape==='circle'?halfWidth:surface.depth/2-margin;
+  const stroke=Math.min(.045,halfWidth*.2,halfDepth*.2),shape=new T.Shape();
+  shape.moveTo(-halfWidth,-halfDepth);shape.lineTo(halfWidth,-halfDepth);
+  shape.lineTo(halfWidth,halfDepth);shape.lineTo(-halfWidth,halfDepth);shape.closePath();
+  const hole=new T.Path();
+  hole.moveTo(-halfWidth+stroke,-halfDepth+stroke);hole.lineTo(-halfWidth+stroke,halfDepth-stroke);
+  hole.lineTo(halfWidth-stroke,halfDepth-stroke);hole.lineTo(halfWidth-stroke,-halfDepth+stroke);hole.closePath();shape.holes.push(hole);
+  const marker=new T.Mesh(new T.ShapeGeometry(shape),landingMarkerMaterial);
+  marker.name='safe-landing-frame';marker.rotation.x=-Math.PI/2;
+  marker.position.set(surface.x,surface.y+.025,surface.z);
+  marker.userData.halfWidth=halfWidth;marker.userData.halfDepth=halfDepth;
+  return marker;
+}
 
 function tone(frequency,duration=.1,type='sine',volume=.035){
   if(!soundOn)return;
@@ -127,7 +147,8 @@ function init(){
   sun.shadow.camera.near=.5;sun.shadow.camera.far=60;sun.shadow.normalBias=.035;sun.shadow.bias=-.00025;sun.shadow.radius=3;scene.add(sun,sun.target);
   const route=core.course();
   platforms=route.map((position,index)=>{
-    const model=CampusModels.create(index);model.group.position.set(position.x,0,position.z);scene.add(model.group);
+    const model=CampusModels.create(index);model.group.add(createLandingMarker(model.surface));
+    model.group.position.set(position.x,0,position.z);scene.add(model.group);
     const surface={...model.surface,x:position.x+model.surface.x,z:position.z+model.surface.z};
     return{index,group:model.group,surface,pos:new T.Vector3(surface.x,surface.y+playerLift,surface.z)};
   });
